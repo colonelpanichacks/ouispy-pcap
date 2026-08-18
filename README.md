@@ -14,7 +14,7 @@ Streams live PCAP over USB-CDC, ships with a Wireshark extcap plugin, and hosts 
 - **Two output modes on one USB-CDC**, runtime-toggle:
   - **PCAP binary** (default) — Wireshark-ready stream
   - **Text summary** — human-readable one-liner per frame
-- **On-device dashboard** on `ouispy-pcap` / `capturethem` at `192.168.4.1` — live packet table, filter box, pause/resume, snapshot CSV
+- **On-device dashboard** on `ouispy-pcap` / `packetsniffer` at `192.168.4.1` — live packet table, filter box, pause/resume, snapshot CSV
 - **Channel control**
   - Locked-channel mode: pick any 1&ndash;14 from the dashboard, AP stays live
   - Hop mode: check exactly which channels to visit (1&ndash;14 individually), dwell time 100&ndash;2000&nbsp;ms

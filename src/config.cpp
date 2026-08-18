@@ -22,7 +22,7 @@ void apply_defaults() {
     cfg.out_mode  = OUT_PCAP;
     cfg.ft_mask   = FT_MGMT | FT_CTRL | FT_DATA;
     strlcpy(cfg.ap_ssid, "ouispy-pcap", sizeof(cfg.ap_ssid));
-    strlcpy(cfg.ap_pass, "capturethem", sizeof(cfg.ap_pass));
+    strlcpy(cfg.ap_pass, "packetsniffer", sizeof(cfg.ap_pass));
     cfg.bssids[0] = 0;
     cfg.ouis[0]   = 0;
 }
@@ -87,7 +87,7 @@ void load() {
     if ((cfg.ft_mask & 0x07) == 0)              cfg.ft_mask = FT_MGMT | FT_CTRL | FT_DATA;
     if (strlen(cfg.ap_ssid) == 0)               strlcpy(cfg.ap_ssid, "ouispy-pcap", sizeof(cfg.ap_ssid));
     size_t pl = strlen(cfg.ap_pass);
-    if (pl < 8 || pl > 63)                       strlcpy(cfg.ap_pass, "capturethem", sizeof(cfg.ap_pass));
+    if (pl < 8 || pl > 63)                       strlcpy(cfg.ap_pass, "packetsniffer", sizeof(cfg.ap_pass));
 }
 
 void save() {
