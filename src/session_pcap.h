@@ -22,4 +22,11 @@ uint32_t dropped();
 // Safe to call concurrently with append(); each call takes the internal mutex.
 size_t   read_chunk(size_t offset, uint8_t* out, size_t len);
 
+// Immutable snapshot for slow /api/session.pcap downloads. The live ring
+// shifts under us via memmove on overflow; snapshot preserves a coherent
+// view for the whole response. Overwritten on each snapshot_take() call.
+size_t   snapshot_take();
+size_t   snapshot_size();
+size_t   snapshot_read(size_t offset, uint8_t* out, size_t len);
+
 } // namespace session_pcap
