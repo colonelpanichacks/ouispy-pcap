@@ -6,6 +6,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <driver/ledc.h>
+#include <esp_log.h>
 #include <ctype.h>
 
 #include "config.h"
@@ -242,7 +243,13 @@ void boot_button_poll() {
 } // namespace
 
 void setup() {
+    // Kill ESP-IDF log leaks that would interleave with pcap binary output.
+    esp_log_set_vprintf([](const char*, va_list) -> int { return 0; });
+    esp_log_level_set("*", ESP_LOG_NONE);
     Serial.begin(115200);
+    Serial.setTxBufferSize(8192);   // bigger buffer -> less chance a full
+                                    // frame write returns partial under load
+    Serial.setDebugOutput(false);
     pinMode(PIN_BOOT, INPUT_PULLUP);
     pixel.begin();
     pixel.setPixelColor(0, 0);
