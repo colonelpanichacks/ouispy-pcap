@@ -1,24 +1,13 @@
 #include "pcap_stream.h"
 #include "config.h"
 #include "text_summary.h"
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
+#include "serial_out.h"
 
 namespace pcap_stream {
 
 namespace {
 
 bool header_emitted = false;
-SemaphoreHandle_t g_serial_mutex = nullptr;
-
-void ensure_mutex() {
-    if (!g_serial_mutex) g_serial_mutex = xSemaphoreCreateMutex();
-}
-struct SerialLock {
-    SerialLock()  { ensure_mutex(); if (g_serial_mutex) xSemaphoreTake(g_serial_mutex, portMAX_DELAY); }
-    ~SerialLock() { if (g_serial_mutex) xSemaphoreGive(g_serial_mutex); }
-};
 
 struct __attribute__((packed)) PcapGlobal {
     uint32_t magic;
@@ -58,7 +47,7 @@ void write_global_header() {
     g.sigfigs   = 0;
     g.snaplen   = PCAP_SNAPLEN;
     g.linktype  = PCAP_LINKTYPE;
-    { SerialLock lk; Serial.write((const uint8_t*)&g, sizeof(g)); }
+    serial_out::submit((const uint8_t*)&g, sizeof(g));
     header_emitted = true;
 }
 
@@ -79,36 +68,19 @@ void write_frame_pcap(const capture::Frame& f) {
     rec.incl_len = total;
     rec.orig_len = total;
 
+    // One message = the full pcap record. serial_out's MessageBuffer keeps
+    // the record atomic across the wire; nothing else can slip bytes in.
     static uint8_t stage[capture::RADIOTAP_LEN + capture::MAX_FRAME_LEN + sizeof(PcapRec)];
     memcpy(stage, &rec, sizeof(rec));
     memcpy(stage + sizeof(rec), rt, capture::RADIOTAP_LEN);
     memcpy(stage + sizeof(rec) + capture::RADIOTAP_LEN, f.data, f.len);
-    const size_t bytes_out = sizeof(rec) + capture::RADIOTAP_LEN + f.len;
-
-    // ALL-OR-NOTHING write. USB CDC Serial.write() can return partial when the
-    // host isn't draining fast enough; a partial write in the middle of a
-    // pcap record permanently desyncs the reader. Wait for enough contiguous
-    // buffer space before starting; if we can't get it inside the timeout,
-    // drop the whole frame (no header, no body) so the file stays coherent.
-    SerialLock lk;
-    for (int i = 0; i < 200; ++i) {
-        if ((size_t)Serial.availableForWrite() >= bytes_out) break;
-        vTaskDelay(pdMS_TO_TICKS(2));
-    }
-    if ((size_t)Serial.availableForWrite() < bytes_out) return;
-
-    size_t sent = 0;
-    for (int i = 0; i < 200 && sent < bytes_out; ++i) {
-        size_t n = Serial.write(stage + sent, bytes_out - sent);
-        if (n == 0) vTaskDelay(pdMS_TO_TICKS(1));
-        sent += n;
-    }
+    serial_out::submit(stage, sizeof(rec) + capture::RADIOTAP_LEN + f.len);
 }
 
 void write_frame_text(const capture::Frame& f) {
     char line[320];
     size_t n = text_summary::format_line(f, line, sizeof(line));
-    if (n > 0) { SerialLock lk; Serial.write((const uint8_t*)line, n); }
+    if (n > 0) serial_out::submit((const uint8_t*)line, n);
 }
 
 } // namespace pcap_stream

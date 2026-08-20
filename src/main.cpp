@@ -13,6 +13,7 @@
 #include "capture.h"
 #include "pcap_stream.h"
 #include "session_pcap.h"
+#include "serial_out.h"
 #include "text_summary.h"
 #include "web_dashboard.h"
 
@@ -117,26 +118,34 @@ void pcap_writer_task(void*) {
 }
 
 void print_banner() {
-    Serial.println();
-    Serial.println(F(" ██████╗ ██╗   ██╗██╗      ███████╗██████╗ ██╗   ██╗        ██████╗  ██████╗ █████╗ ██████╗ "));
-    Serial.println(F("██╔═══██╗██║   ██║██║      ██╔════╝██╔══██╗╚██╗ ██╔╝        ██╔══██╗██╔════╝██╔══██╗██╔══██╗"));
-    Serial.println(F("██║   ██║██║   ██║██║█████╗███████╗██████╔╝ ╚████╔╝         ██████╔╝██║     ███████║██████╔╝"));
-    Serial.println(F("██║   ██║██║   ██║██║╚════╝╚════██║██╔═══╝   ╚██╔╝          ██╔═══╝ ██║     ██╔══██║██╔═══╝ "));
-    Serial.println(F("╚██████╔╝╚██████╔╝██║      ███████║██║        ██║           ██║     ╚██████╗██║  ██║██║     "));
-    Serial.println(F(" ╚═════╝  ╚═════╝ ╚═╝      ╚══════╝╚═╝        ╚═╝           ╚═╝      ╚═════╝╚═╝  ╚═╝╚═╝     "));
-    Serial.print(F("OUI-SPY PCAP  fw="));
-    Serial.print(config::FW_VERSION());
-    Serial.print(F("  built="));
-    Serial.print(F(__DATE__ " " __TIME__));
-    Serial.println();
-    Serial.println(F("Passive receive only. Nothing is transmitted."));
-    Serial.println();
+    // One atomic message so the banner text never interleaves with any
+    // pcap or reply bytes that might race it.
+    char buf[900];
+    int n = snprintf(buf, sizeof(buf),
+        "\n"
+        " ██████╗ ██╗   ██╗██╗      ███████╗██████╗ ██╗   ██╗        ██████╗  ██████╗ █████╗ ██████╗ \n"
+        "██╔═══██╗██║   ██║██║      ██╔════╝██╔══██╗╚██╗ ██╔╝        ██╔══██╗██╔════╝██╔══██╗██╔══██╗\n"
+        "██║   ██║██║   ██║██║█████╗███████╗██████╔╝ ╚████╔╝         ██████╔╝██║     ███████║██████╔╝\n"
+        "██║   ██║██║   ██║██║╚════╝╚════██║██╔═══╝   ╚██╔╝          ██╔═══╝ ██║     ██╔══██║██╔═══╝ \n"
+        "╚██████╔╝╚██████╔╝██║      ███████║██║        ██║           ██║     ╚██████╗██║  ██║██║     \n"
+        " ╚═════╝  ╚═════╝ ╚═╝      ╚══════╝╚═╝        ╚═╝           ╚═╝      ╚═════╝╚═╝  ╚═╝╚═╝     \n"
+        "OUI-SPY PCAP  fw=%s  built=%s %s\n"
+        "Passive receive only. Nothing is transmitted.\n\n",
+        config::FW_VERSION(), __DATE__, __TIME__);
+    if (n > 0) serial_out::submit((const uint8_t*)buf, n);
 }
 
 String upper(const String& s) { String o = s; o.toUpperCase(); return o; }
 
-void reply_ok()                { if (config::get().out_mode == config::OUT_TEXT) Serial.println(F("OK")); }
-void reply_err(const char* m)  { if (config::get().out_mode == config::OUT_TEXT) { Serial.print(F("ERR ")); Serial.println(m); } }
+void reply_ok() {
+    if (config::get().out_mode == config::OUT_TEXT) serial_out::submit("OK\n");
+}
+void reply_err(const char* m) {
+    if (config::get().out_mode != config::OUT_TEXT) return;
+    char buf[80];
+    int n = snprintf(buf, sizeof(buf), "ERR %s\n", m ? m : "");
+    if (n > 0) serial_out::submit((const uint8_t*)buf, n);
+}
 
 void handle_serial_cmd(const String& raw) {
     String line = raw; line.trim();
@@ -153,8 +162,10 @@ void handle_serial_cmd(const String& raw) {
                          : wm == WIFI_MODE_APSTA ? "APSTA" : "NULL";
         IPAddress ip = WiFi.softAPIP();
         String apmac = WiFi.softAPmacAddress();
-        Serial.printf("{\"mode\":\"%s\",\"chan\":%u,\"hopmask\":\"0x%04x\",\"dwell\":%u,\"out\":\"%s\","
-            "\"total\":%u,\"pps\":%u,\"drop_pcap\":%u,\"drop_dash\":%u,\"fw\":\"%s\","
+        char buf[512];
+        int n = snprintf(buf, sizeof(buf),
+            "{\"mode\":\"%s\",\"chan\":%u,\"hopmask\":\"0x%04x\",\"dwell\":%u,\"out\":\"%s\","
+            "\"total\":%u,\"pps\":%u,\"drop_pcap\":%u,\"drop_dash\":%u,\"drop_ser\":%u,\"fw\":\"%s\","
             "\"wifi\":\"%s\",\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\",\"ap_mac\":\"%s\",\"ap_stations\":%u}\n",
             config::get().mode == config::MODE_HOP ? "HOP" : "LOCKED",
             (unsigned)capture::current_channel(),
@@ -165,14 +176,19 @@ void handle_serial_cmd(const String& raw) {
             (unsigned)capture::packets_per_sec(),
             (unsigned)capture::dropped_pcap(),
             (unsigned)capture::dropped_dash(),
+            (unsigned)serial_out::dropped(),
             config::FW_VERSION(),
             wm_s, config::get().ap_ssid, ip.toString().c_str(), apmac.c_str(),
             (unsigned)WiFi.softAPgetStationNum());
+        if (n > 0) serial_out::submit((const uint8_t*)buf, n);
         return;
     }
     if (U == "VERSION") {
         if (config::get().out_mode != config::OUT_TEXT) return;
-        Serial.printf("OUI-SPY PCAP %s built %s %s\n", config::FW_VERSION(), __DATE__, __TIME__);
+        char buf[128];
+        int n = snprintf(buf, sizeof(buf), "OUI-SPY PCAP %s built %s %s\n",
+                         config::FW_VERSION(), __DATE__, __TIME__);
+        if (n > 0) serial_out::submit((const uint8_t*)buf, n);
         return;
     }
     if (U.startsWith("MODE ")) {
@@ -247,9 +263,11 @@ void setup() {
     esp_log_set_vprintf([](const char*, va_list) -> int { return 0; });
     esp_log_level_set("*", ESP_LOG_NONE);
     Serial.begin(115200);
-    Serial.setTxBufferSize(8192);   // bigger buffer -> less chance a full
-                                    // frame write returns partial under load
+    Serial.setTxBufferSize(8192);
     Serial.setDebugOutput(false);
+    // Single-owner Serial output. Everything after this uses serial_out;
+    // no other task ever calls Serial.write().
+    serial_out::init();
     pinMode(PIN_BOOT, INPUT_PULLUP);
     pixel.begin();
     pixel.setPixelColor(0, 0);
