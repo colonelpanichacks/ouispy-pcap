@@ -99,17 +99,15 @@ void led_task(void*) {
 }
 
 void pcap_writer_task(void*) {
+    // USB output is text only. Full PCAP capture lives on the dashboard
+    // (GET /api/session.pcap). session_pcap::append fills the download
+    // buffer for every frame regardless of USB text emission.
     for (;;) {
         capture::Frame f;
         int drained = 0;
         while (drained < 16 && capture::pop_pcap(&f)) {
             last_packet_ms = millis();
-            if (config::get().out_mode == config::OUT_PCAP) {
-                pcap_stream::ensure_header_for_current_mode();
-                pcap_stream::write_frame_pcap(f);
-            } else {
-                pcap_stream::write_frame_text(f);
-            }
+            pcap_stream::write_frame_text(f);
             session_pcap::append(f);
             drained++;
         }
@@ -137,11 +135,8 @@ void print_banner() {
 
 String upper(const String& s) { String o = s; o.toUpperCase(); return o; }
 
-void reply_ok() {
-    if (config::get().out_mode == config::OUT_TEXT) serial_out::submit("OK\n");
-}
+void reply_ok()              { serial_out::submit("OK\n"); }
 void reply_err(const char* m) {
-    if (config::get().out_mode != config::OUT_TEXT) return;
     char buf[80];
     int n = snprintf(buf, sizeof(buf), "ERR %s\n", m ? m : "");
     if (n > 0) serial_out::submit((const uint8_t*)buf, n);
@@ -155,7 +150,6 @@ void handle_serial_cmd(const String& raw) {
     String U = upper(body);
 
     if (U == "STATUS") {
-        if (config::get().out_mode != config::OUT_TEXT) return;
         wifi_mode_t wm = WIFI_MODE_NULL;
         esp_wifi_get_mode(&wm);
         const char* wm_s = wm == WIFI_MODE_AP ? "AP" : wm == WIFI_MODE_STA ? "STA"
@@ -164,14 +158,13 @@ void handle_serial_cmd(const String& raw) {
         String apmac = WiFi.softAPmacAddress();
         char buf[512];
         int n = snprintf(buf, sizeof(buf),
-            "{\"mode\":\"%s\",\"chan\":%u,\"hopmask\":\"0x%04x\",\"dwell\":%u,\"out\":\"%s\","
+            "{\"mode\":\"%s\",\"chan\":%u,\"hopmask\":\"0x%04x\",\"dwell\":%u,"
             "\"total\":%u,\"pps\":%u,\"drop_pcap\":%u,\"drop_dash\":%u,\"drop_ser\":%u,\"fw\":\"%s\","
             "\"wifi\":\"%s\",\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\",\"ap_mac\":\"%s\",\"ap_stations\":%u}\n",
             config::get().mode == config::MODE_HOP ? "HOP" : "LOCKED",
             (unsigned)capture::current_channel(),
             (unsigned)config::get().hopmask,
             (unsigned)config::get().dwell_ms,
-            config::get().out_mode == config::OUT_PCAP ? "PCAP" : "TEXT",
             (unsigned)capture::total_packets(),
             (unsigned)capture::packets_per_sec(),
             (unsigned)capture::dropped_pcap(),
@@ -184,7 +177,6 @@ void handle_serial_cmd(const String& raw) {
         return;
     }
     if (U == "VERSION") {
-        if (config::get().out_mode != config::OUT_TEXT) return;
         char buf[128];
         int n = snprintf(buf, sizeof(buf), "OUI-SPY PCAP %s built %s %s\n",
                          config::FW_VERSION(), __DATE__, __TIME__);
@@ -192,10 +184,10 @@ void handle_serial_cmd(const String& raw) {
         return;
     }
     if (U.startsWith("MODE ")) {
-        String v = U.substring(5); v.trim();
-        if (v == "PCAP") { config::set_out(config::OUT_PCAP); pcap_stream::on_mode_changed(); reply_ok(); return; }
-        if (v == "TEXT") { config::set_out(config::OUT_TEXT); pcap_stream::on_mode_changed(); reply_ok(); return; }
-        reply_err("bad mode"); return;
+        // Kept as a compatibility no-op. USB output is text only; PCAP
+        // binary capture lives on the dashboard at /api/session.pcap.
+        reply_ok();
+        return;
     }
     if (U.startsWith("CHAN ")) {
         int ch = U.substring(5).toInt();
@@ -287,7 +279,8 @@ void setup() {
 
     session_pcap::init();
     web_dashboard::init();
-    pcap_stream::begin();
+    // pcap_stream no longer needs init -- USB output is text-only, session
+    // buffer for the dashboard is initialized separately.
 
     // Frame struct embeds a 2500-byte inline buffer, so each pop copies 2.5KB
     // into a stack-local. These stack sizes need real headroom on top of that.
@@ -296,7 +289,7 @@ void setup() {
 
     if (g_fault == Fault::None) buzzer_chirp(1500, 40);
 
-    if (config::get().out_mode == config::OUT_TEXT) print_banner();
+    print_banner();
 }
 
 void loop() {

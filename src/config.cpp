@@ -19,7 +19,6 @@ void apply_defaults() {
     cfg.chan      = 6;
     cfg.hopmask   = 0x0422;
     cfg.dwell_ms  = 300;
-    cfg.out_mode  = OUT_PCAP;
     cfg.ft_mask   = FT_MGMT | FT_CTRL | FT_DATA;
     strlcpy(cfg.ap_ssid, "ouispy-pcap", sizeof(cfg.ap_ssid));
     strlcpy(cfg.ap_pass, "packetsniffer", sizeof(cfg.ap_pass));
@@ -69,7 +68,6 @@ void load() {
     cfg.chan     = prefs.getUChar("chan", cfg.chan);
     cfg.hopmask  = prefs.getUShort("hopmask", cfg.hopmask);
     cfg.dwell_ms = prefs.getUShort("dwell", cfg.dwell_ms);
-    cfg.out_mode = prefs.getUChar("out", cfg.out_mode);
     cfg.ft_mask  = prefs.getUChar("ftmask", cfg.ft_mask);
     prefs.getString("apssid", cfg.ap_ssid, sizeof(cfg.ap_ssid));
     prefs.getString("appass", cfg.ap_pass, sizeof(cfg.ap_pass));
@@ -83,7 +81,6 @@ void load() {
     cfg.hopmask &= 0x3FFF;
     if (cfg.dwell_ms < 100)                     cfg.dwell_ms = 100;
     if (cfg.dwell_ms > 2000)                    cfg.dwell_ms = 2000;
-    if (cfg.out_mode > OUT_TEXT)                cfg.out_mode = OUT_PCAP;
     if ((cfg.ft_mask & 0x07) == 0)              cfg.ft_mask = FT_MGMT | FT_CTRL | FT_DATA;
     if (strlen(cfg.ap_ssid) == 0)               strlcpy(cfg.ap_ssid, "ouispy-pcap", sizeof(cfg.ap_ssid));
     size_t pl = strlen(cfg.ap_pass);
@@ -96,7 +93,6 @@ void save() {
     prefs.putUChar("chan",   cfg.chan);
     prefs.putUShort("hopmask", cfg.hopmask);
     prefs.putUShort("dwell", cfg.dwell_ms);
-    prefs.putUChar("out",    cfg.out_mode);
     prefs.putUChar("ftmask", cfg.ft_mask);
     prefs.putString("apssid", cfg.ap_ssid);
     prefs.putString("appass", cfg.ap_pass);
@@ -114,7 +110,6 @@ void set_mode(uint8_t m)      { cfg.mode = (m > MODE_HOP) ? MODE_LOCKED : m; sav
 void set_channel(uint8_t ch)  { if (valid_channel(ch)) { cfg.chan = ch; save(); } }
 void set_hopmask(uint16_t m)  { m &= 0x3FFF; if (m == 0) return; cfg.hopmask = m; save(); }
 void set_dwell(uint16_t ms)   { if (ms < 100) ms = 100; if (ms > 2000) ms = 2000; cfg.dwell_ms = ms; save(); }
-void set_out(uint8_t o)       { cfg.out_mode = (o > OUT_TEXT) ? OUT_PCAP : o; save(); }
 void set_ftmask(uint8_t m)    { m &= 0x07; if (m == 0) m = FT_MGMT | FT_CTRL | FT_DATA; cfg.ft_mask = m; save(); }
 
 void set_ap(const char* ssid, const char* pass) {

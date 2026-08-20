@@ -151,7 +151,6 @@ void handle_get_config(AsyncWebServerRequest* req) {
     doc["chan"]     = c.chan;
     doc["hopmask"]  = c.hopmask;
     doc["dwell"]    = c.dwell_ms;
-    doc["out"]      = c.out_mode;
     doc["ftmask"]   = c.ft_mask;
     doc["ap_ssid"]  = c.ap_ssid;
     doc["ap_pass"]  = c.ap_pass;
@@ -181,12 +180,7 @@ void handle_post_config(AsyncWebServerRequest* req, uint8_t* data, size_t len, s
 
     bool need_apply_mode   = false;
     bool need_apply_filter = false;
-    bool need_pcap_hdr     = false;
 
-    if (doc.containsKey("out")) {
-        uint8_t o = doc["out"];
-        if (o != config::get().out_mode) { config::set_out(o); need_pcap_hdr = true; }
-    }
     if (doc.containsKey("chan")) {
         uint8_t ch = doc["chan"];
         if (ch != config::get().chan) { config::set_channel(ch); need_apply_mode = true; }
@@ -212,7 +206,6 @@ void handle_post_config(AsyncWebServerRequest* req, uint8_t* data, size_t len, s
 
     if (need_apply_mode) capture::apply_mode();
     else if (need_apply_filter) capture::apply_filter_mask();
-    if (need_pcap_hdr) pcap_stream::on_mode_changed();
 
     req->send(200, "application/json", "{\"ok\":true}");
 }
